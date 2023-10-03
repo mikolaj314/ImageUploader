@@ -1,0 +1,57 @@
+version: "1"
+
+services:
+  db:
+    container_name: image_uploader_db
+    restart: always
+    image: postgres:16.0-alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+
+  redis:
+    restart: unless-stopped
+    image: redis:7.2.1-alpine
+
+  backend:
+    container_name: image_uploader_backend
+    restart: always
+    build:
+      context: ./
+      dockerfile: ./docker/local/Dockerfile
+    volumes:
+        - .:/app
+    image: image_uploader_backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./docker/local/.env-dev
+    depends_on:
+      - db
+      - redis
+    command: sh -c "python manage.py makemigrations &&
+      python manage.py migrate &&
+      python manage.py create_admin &&
+      python manage.py runserver 0.0.0.0:8000"
+
+
+  celery_worker:
+    restart: always
+    build:
+      context: .
+      dockerfile: ./docker/local/Dockerfile
+    image: image_uploader_celery
+    volumes:
+      - .:/app
+    env_file:
+      - ./docker/local/.env-dev
+    depends_on:
+      - backend
+      - redis
+    command: sh -c "celery -A ImageUploader worker -l INFO"
+
+volumes:
+  postgres_data: {}
